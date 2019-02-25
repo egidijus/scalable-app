@@ -229,8 +229,8 @@
     - name: Create task definition
       ecs_taskdefinition:
         family: "{{ cluster_name }}-taskdef"
-        task_role_arn: "arn:aws:iam::129162452542:role/fargate-ecs"
-        execution_role_arn: "arn:aws:iam::129162452542:role/fargate-ecs"
+        task_role_arn: "{{ ecs_role.arn }}"
+        execution_role_arn: "{{ ecs_role.arn }}"
         containers:
         - name: "scalable_app"
           essential: true
