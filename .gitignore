@@ -1,4 +1,10 @@
-*.retry
 venv/*
 secret.yml
 vars/secret.yml
+
+# Ansible
+*.retry
+
+# python cache
+__pycache__
+

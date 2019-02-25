@@ -136,6 +136,13 @@
         description: Allows ECS tasks to call AWS services on your behalf.
       register: ecs_role
 
+    - name: Create a log group for the logs
+      cloudwatchlogs_log_group:
+        retention: 30
+        region: "{{ cloud_config.region }}"
+        state: present
+        log_group_name: "{{ cluster_name }}"
+
     - name: Lookup http security group by name
       ec2_group_facts:
         region: "{{ cloud_config.region }}"
@@ -162,6 +169,7 @@
         name: "{{ cluster_name |replace('_', '-') }}"
         protocol: http
         target_type: ip
+        health_check_port: 8448
         port: 8448
         vpc_id: "{{ scalable_vpc_facts.vpcs[0]['vpc_id'] }}"
         health_check_path: /_health
@@ -238,6 +246,12 @@
           environment:
           - name: s3_static_asset_bucket
             value: "{{ s3_static_asset_bucket }}"
+          logConfiguration:
+            logDriver: awslogs
+            options:
+              awslogs-group: "{{ cluster_name }}"
+              awslogs-region: eu-west-1
+              awslogs-stream-prefix: "{{ cluster_name }}-containers"
         launch_type: FARGATE
         cpu: 512
         memory: 1GB
