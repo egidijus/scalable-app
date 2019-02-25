@@ -8,7 +8,7 @@ We could use AWS R53 DNS with a "local" zone setup and registering all the resou
 This is a very basic docker application container. We could have a service supervisor in the container like s6-overlay and have the app run nginx, uwsgi python and varnish with consul-template or consul env for dynamically loading and reloading configuration changes.
 
 ## CI:
-Thebut it should be easy to plug in steps in to a CI pipeline.
+This does not include test or test runner, but it should be easy to plug in steps in to a CI pipeline.
 
 ## Monitoring and alerting:
 We could solve this with AWS Cloudwatch metrics, create an alarm on AWS ELB 40x and 50x responses, alarm publishes a notification to AWS SNS, AWS SNS is configured to a pagerduty endpoint and would call the on-call engineer.
