@@ -1,5 +1,29 @@
-# Considerations assumptions and caveats
+# What is this?
+This solution will:
+1. Build a docker image locally with a basic python app.
+1. Create a VPC with public routes and security groups.
+1. Creates relevant IAM Roles for ECS/FARGATE.
+1. Push docker image to AWS ECR.
+1. Create an AWS ECS cluster and service and task.
+1. Start ECS cluster task based on your container.
+1. Attach the ECS FARGATE cluster to an AWS ELB for dynamic scaling.
+1. You can scale number of nodes you want to run by changing `size_of_cluster: 2` in `./vars/all.yml`
+1. This also puts logs in to AWS Cloudwatch.
 
+
+
+
+One example cluster container is accessible behing the ELB
+http://63.33.41.119:8448/
+
+## Access
+ELB entrance is via  http://tomato.cat
+Health endpoint : http://tomato.cat/_health
+
+
+
+
+# Considerations assumptions and caveats
 This solution does not cover:
 ## Discovery:
 We could use AWS R53 DNS with a "local" zone setup and registering all the resources in to that zone. Or we could use something like HashiCorp Consul which we would ship with the container.

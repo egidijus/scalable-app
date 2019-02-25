@@ -29,10 +29,6 @@
       with_items: "{{ cloud_config.subnets }}"
       register: cluster_subnet
 
-    - name: debug subnets
-      debug:
-        msg: "{{ cluster_subnet }}"
-
     - name: Add an Internet Gateway to the VPC
       ec2_vpc_igw:
         region: "{{ cloud_config.region }}"
@@ -41,11 +37,22 @@
       when: cloud_config.internet_gateway
       register: cluster_igw
 
+    - name: lookup route tables
+      ec2_vpc_route_table_facts:
+        region: "{{ cloud_config.region }}"
+        filters:
+          "tag:Name": scalable-app
+      register: check_route_table
+      ignore_errors: True
+    - debug: msg="{{ check_route_table }}"
+
     - name: Set up the public subnet route table for the Internet Gateway
       ec2_vpc_route_table:
         region: "{{ cloud_config.region }}"
         vpc_id: "{{ cluster_vpc.vpc.id }}"
         subnets: "{{ item }}"
+        tags:
+          Name: scalable-app
         routes:
           - dest: 0.0.0.0/0
             gateway_id: "{{ cluster_igw.gateway_id }}"
@@ -53,7 +60,7 @@
       with_items:
         - "{{ cluster_subnet.results[0]['subnet']['id'] }}"
         - "{{ cluster_subnet.results[1]['subnet']['id'] }}"
-      when: cluster_igw.gateway_id is defined
+      when: cluster_igw.gateway_id is defined and check_route_table|failed
 
     - name: Create Security Groups
       ec2_group:
@@ -66,7 +73,7 @@
         rules: "{{ item.rules }}"
       with_items: "{{ cloud_config.security_groups }}"
       register: cluster_security_groups
-   
+
     - name: Docker login (must `--no-include-email`)
       shell: "$(aws ecr get-login --region {{ cloud_config.region }} --no-include-email)"
       args:
@@ -109,7 +116,7 @@
     - name: Setup ECS cluster
       ecs_cluster:
         name: "{{ cluster_name }}"
-        state: present 
+        state: present
         region: "{{ cloud_config.region }}"
 
     - name: Create a policy
@@ -120,13 +127,13 @@
         policy_json: " {{ lookup( 'file', './vars/policy.json') }} "
         state: present
 
-    - name: Create a role  
+    - name: Create a role
       iam_role:
         name: fargate-ecs
         assume_role_policy_document: "{{ lookup('file','./vars/role.json') }}"
         description: Allows ECS tasks to call AWS services on your behalf.
       register: ecs_role
-    - debug: msg="{{ ecs_role }}"
+    # - debug: msg="{{ ecs_role }}"
 
     - name: Lookup http security group by name
       ec2_group_facts:
@@ -141,11 +148,20 @@
           "tag:service": "{{ cluster_name }}"
       register: scalable_vpc_facts
 
+    - name: create ECS cluster
+      ecs_cluster:
+        name: "{{ cluster_name }}"
+        state: present
+        region: "{{ cloud_config.region }}"
+      register: result
+    - debug: msg="{{ result }}"
+
     - name: setup a target group for ELB
       elb_target_group:
         name: "{{ cluster_name |replace('_', '-') }}"
         protocol: http
-        port: 80
+        target_type: ip
+        port: 8448
         vpc_id: "{{ scalable_vpc_facts.vpcs[0]['vpc_id'] }}"
         health_check_path: /_health
         successful_response_codes: "200, 250-260"
@@ -156,10 +172,10 @@
         state: present
         name: "{{ cluster_name |replace('_', '-') }}"
         scheme: internet-facing
-        security_groups: 
+        security_groups:
           - "{{ http_security_group.security_groups[0]['group_id'] }}"
         region: "{{ cloud_config.region }}"
-        subnets: 
+        subnets:
           - "{{ cluster_subnet.results[0]['subnet']['id'] }}"
           - "{{ cluster_subnet.results[1]['subnet']['id'] }}"
         listeners:
@@ -170,23 +186,33 @@
                 TargetGroupName: "{{ cluster_name |replace('_', '-') }}"
       register: ecs_elb
 
+    - name: Lookup elb_target_group_facts
+      elb_target_group_facts:
+        names:
+          - "{{ cluster_name |replace('_', '-') }}"
+      register: elb_target_group_facts
+    - debug: msg="target group {{ elb_target_group_facts.target_groups[0]['target_group_arn'] }}"
+
+
     - name: Lookup Elb Facts
-      ec2_elb_facts:
-        region: "{{ cloud_config.region }}"
-        names: "{{ cluster_name }}"
+      shell: "(aws elbv2 describe-load-balancers --names {{ cluster_name |replace('_', '-') }} --output=json)"
       register: ecs_elb_facts
-    - debug: msg="{{ ecs_elb_facts }}"
 
+    - name: Make facts about elbs
+      set_fact:
+        ecs_elb_fact: "{{ ecs_elb_facts.stdout }}"
+    - debug: msg="{{ ecs_elb_facts.stdout }}"
 
-    - name: Lookup zone info  
+    - name: Lookup zone info
       route53:
           state: get
           zone: "{{ dns_zone }}"
           record: "{{ dns_zone }}"
           type: A
       register: zone_info
-    - debug: msg="{{ zone_info.set['alias_hosted_zone_id'] }}"
+    # - debug: msg="{{ zone_info.set['alias_hosted_zone_id'] }}"
 
+    # - debug: msg="{{ ecs_elb_facts.stdout }}"
 
     - name: register the ELB under the zone A record.
       route53:
@@ -194,23 +220,12 @@
           zone: "{{ dns_zone }}"
           record: "{{ dns_zone }}"
           type: A
-          value: "dualstack.{{ ecs_elb['dns_name'] }}"
+          value: "dualstack.{{ ecs_elb_fact.LoadBalancers[0]['DNSName'] }}"
           overwrite: yes
           alias: True
           alias_hosted_zone_id: "{{ zone_info.set['alias_hosted_zone_id'] }}"
 
-    - name: debug vars
-      debug:
-        msg: "{{ ecs_elb }}"
 
-    - name: create ECS cluster
-      ecs_cluster:
-        name: "{{ cluster_name }}"
-        state: present
-        region: "{{ cloud_config.region }}"
-      register: result
-    - debug: msg="{{ result }}"
-    
     - name: Create task definition
       ecs_taskdefinition:
         family: "{{ cluster_name }}-taskdef"
@@ -240,15 +255,15 @@
         task_definition: "{{ cluster_name }}-taskdef"
         launch_type: FARGATE
         load_balancers:
-          - targetGroupArn: "{{ ecs_elb.listeners[0]['default_actions'][0]['target_group_arn'] }}"
+          - targetGroupArn: "{{ elb_target_group_facts.target_groups[0]['target_group_arn'] }}"
             containerName: "scalable_app"
             containerPort: 8448
         network_configuration:
           assign_public_ip: yes
-          subnets: 
+          subnets:
           - "{{ cluster_subnet.results[0]['subnet']['id'] }}"
           - "{{ cluster_subnet.results[1]['subnet']['id'] }}"
-          security_groups: 
+          security_groups:
           - "{{ http_security_group.security_groups[0]['group_id'] }}"
         desired_count: "{{ size_of_cluster }}"
         region: "{{ cloud_config.region }}"

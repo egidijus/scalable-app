@@ -6,7 +6,7 @@ image_version: latest
 region: eu-west-1
 s3_static_asset_bucket: tomato.cat
 dns_zone: tomato.cat
-size_of_cluster: 1
+size_of_cluster: 2
 
 cloud_config:
   region: '{{ region }}'
