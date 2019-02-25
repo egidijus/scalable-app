@@ -1,0 +1,13 @@
+version: '3.0'
+services:
+  app:
+    build:
+      context: app
+      dockerfile: ./Dockerfile
+    image: scalable-app
+    ports:
+      - "8448:8448"
+    environment:
+      - ENV=dev
+      - VERSION=${VERSION:-$snapshot}
+      - s3_static_asset_bucket=tomato.cat

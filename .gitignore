@@ -1,0 +1,4 @@
+*.retry
+venv/*
+secret.yml
+vars/secret.yml

@@ -1,0 +1,260 @@
+---
+- name: Build the Cloud Environment
+  hosts: localhost
+  connection: local
+  gather_facts: False
+  vars_files:
+    - ./vars/all.yml
+    - ./vars/secret.yml
+  tasks:
+    - name: Create the VPC
+      ec2_vpc_net:
+        region: "{{ cloud_config.region }}"
+        cidr_block: "{{ cloud_config.vpc_cidr }}"
+        name: "{{ cloud_config.vpc_name }}"
+        tags:
+          service: "{{ cluster_name }}"
+        state: present
+      register: cluster_vpc
+
+    - name: Create the Subnet
+      ec2_vpc_subnet:
+        region: "{{ cloud_config.region }}"
+        az: "{{ item.zone }}"
+        vpc_id: "{{ cluster_vpc.vpc.id }}"
+        cidr: "{{ item.subnet_cidr }}"
+        resource_tags:
+          Name: "{{ item.subnet_name }}"
+        state: present
+      with_items: "{{ cloud_config.subnets }}"
+      register: cluster_subnet
+
+    - name: debug subnets
+      debug:
+        msg: "{{ cluster_subnet }}"
+
+    - name: Add an Internet Gateway to the VPC
+      ec2_vpc_igw:
+        region: "{{ cloud_config.region }}"
+        vpc_id: "{{ cluster_vpc.vpc.id }}"
+        state: present
+      when: cloud_config.internet_gateway
+      register: cluster_igw
+
+    - name: Set up the public subnet route table for the Internet Gateway
+      ec2_vpc_route_table:
+        region: "{{ cloud_config.region }}"
+        vpc_id: "{{ cluster_vpc.vpc.id }}"
+        subnets: "{{ item }}"
+        routes:
+          - dest: 0.0.0.0/0
+            gateway_id: "{{ cluster_igw.gateway_id }}"
+        state: present
+      with_items:
+        - "{{ cluster_subnet.results[0]['subnet']['id'] }}"
+        - "{{ cluster_subnet.results[1]['subnet']['id'] }}"
+      when: cluster_igw.gateway_id is defined
+
+    - name: Create Security Groups
+      ec2_group:
+        region: "{{ cloud_config.region }}"
+        name: "{{ item.name }}"
+        vpc_id: "{{ cluster_vpc.vpc.id }}"
+        description: "{{ item.description }}"
+        purge_rules: false
+        purge_rules_egress: false
+        rules: "{{ item.rules }}"
+      with_items: "{{ cloud_config.security_groups }}"
+      register: cluster_security_groups
+   
+    - name: Docker login (must `--no-include-email`)
+      shell: "$(aws ecr get-login --region {{ cloud_config.region }} --no-include-email)"
+      args:
+        executable: /bin/bash
+
+    - name: Create ECR repository
+      ecs_ecr:
+        name: "{{ repository_name }}"
+        aws_access_key: "{{ key_id }}"
+        aws_secret_key: "{{ access_key }}"
+        region: "{{ cloud_config.region }}"
+      register: ecr_repo
+
+    - name: Tag local image to push to ecr
+      docker_image:
+        name: "{{ image_name }}:{{ image_version }}"
+        repository: "{{ ecr_repo.repository.repositoryUri }}"
+        tag: "{{ ecr_repo.repository.repositoryUri }}:{{ image_version }}"
+
+    - name: Push image to ecr
+      docker_image:
+        name: "{{ ecr_repo.repository.repositoryUri }}:{{ image_version }}"
+        push: yes
+
+    - name: Create a bucket for static assets
+      aws_s3:
+        mode: create
+        bucket: "{{ s3_static_asset_bucket }}"
+        region: "{{ cloud_config.region }}"
+        permission: public-read
+
+    - name: Push static assets to S3
+      aws_s3:
+        bucket: "{{ s3_static_asset_bucket }}"
+        region: "{{ cloud_config.region }}"
+        object: tomato.jpg
+        src: ./app/src/static/tomato.jpg
+        mode: put
+
+    - name: Setup ECS cluster
+      ecs_cluster:
+        name: "{{ cluster_name }}"
+        state: present 
+        region: "{{ cloud_config.region }}"
+
+    - name: Create a policy
+      iam_policy:
+        iam_type: role
+        iam_name: fargate-ecs
+        policy_name: fargate-ecs
+        policy_json: " {{ lookup( 'file', './vars/policy.json') }} "
+        state: present
+
+    - name: Create a role  
+      iam_role:
+        name: fargate-ecs
+        assume_role_policy_document: "{{ lookup('file','./vars/role.json') }}"
+        description: Allows ECS tasks to call AWS services on your behalf.
+      register: ecs_role
+    - debug: msg="{{ ecs_role }}"
+
+    - name: Lookup http security group by name
+      ec2_group_facts:
+        region: "{{ cloud_config.region }}"
+        filters:
+          group-name: scalable-http
+      register: http_security_group
+
+    - name: Lookup VPC by tags
+      ec2_vpc_net_facts:
+        filters:
+          "tag:service": "{{ cluster_name }}"
+      register: scalable_vpc_facts
+
+    - name: setup a target group for ELB
+      elb_target_group:
+        name: "{{ cluster_name |replace('_', '-') }}"
+        protocol: http
+        port: 80
+        vpc_id: "{{ scalable_vpc_facts.vpcs[0]['vpc_id'] }}"
+        health_check_path: /_health
+        successful_response_codes: "200, 250-260"
+        state: present
+
+    - name: configure ELB for app
+      elb_application_lb:
+        state: present
+        name: "{{ cluster_name |replace('_', '-') }}"
+        scheme: internet-facing
+        security_groups: 
+          - "{{ http_security_group.security_groups[0]['group_id'] }}"
+        region: "{{ cloud_config.region }}"
+        subnets: 
+          - "{{ cluster_subnet.results[0]['subnet']['id'] }}"
+          - "{{ cluster_subnet.results[1]['subnet']['id'] }}"
+        listeners:
+          - Protocol: HTTP
+            Port: 80
+            DefaultActions:
+              - Type: forward
+                TargetGroupName: "{{ cluster_name |replace('_', '-') }}"
+      register: ecs_elb
+
+    - name: Lookup Elb Facts
+      ec2_elb_facts:
+        region: "{{ cloud_config.region }}"
+        names: "{{ cluster_name }}"
+      register: ecs_elb_facts
+    - debug: msg="{{ ecs_elb_facts }}"
+
+
+    - name: Lookup zone info  
+      route53:
+          state: get
+          zone: "{{ dns_zone }}"
+          record: "{{ dns_zone }}"
+          type: A
+      register: zone_info
+    - debug: msg="{{ zone_info.set['alias_hosted_zone_id'] }}"
+
+
+    - name: register the ELB under the zone A record.
+      route53:
+          state: present
+          zone: "{{ dns_zone }}"
+          record: "{{ dns_zone }}"
+          type: A
+          value: "dualstack.{{ ecs_elb['dns_name'] }}"
+          overwrite: yes
+          alias: True
+          alias_hosted_zone_id: "{{ zone_info.set['alias_hosted_zone_id'] }}"
+
+    - name: debug vars
+      debug:
+        msg: "{{ ecs_elb }}"
+
+    - name: create ECS cluster
+      ecs_cluster:
+        name: "{{ cluster_name }}"
+        state: present
+        region: "{{ cloud_config.region }}"
+      register: result
+    - debug: msg="{{ result }}"
+    
+    - name: Create task definition
+      ecs_taskdefinition:
+        family: "{{ cluster_name }}-taskdef"
+        task_role_arn: "arn:aws:iam::129162452542:role/fargate-ecs"
+        execution_role_arn: "arn:aws:iam::129162452542:role/fargate-ecs"
+        containers:
+        - name: "scalable_app"
+          essential: true
+          image: "{{ ecr_repo.repository.repositoryUri }}:{{ image_version }}"
+          portMappings:
+          - containerPort: 8448
+            hostPort:      8448
+          environment:
+          - name: s3_static_asset_bucket
+            value: "{{ s3_static_asset_bucket }}"
+        launch_type: FARGATE
+        cpu: 512
+        memory: 1GB
+        state: present
+        network_mode: awsvpc
+
+    - name: Create an ECS service
+      ecs_service:
+        state: present
+        name: "{{ cluster_name }}"
+        cluster: "{{ cluster_name }}"
+        task_definition: "{{ cluster_name }}-taskdef"
+        launch_type: FARGATE
+        load_balancers:
+          - targetGroupArn: "{{ ecs_elb.listeners[0]['default_actions'][0]['target_group_arn'] }}"
+            containerName: "scalable_app"
+            containerPort: 8448
+        network_configuration:
+          assign_public_ip: yes
+          subnets: 
+          - "{{ cluster_subnet.results[0]['subnet']['id'] }}"
+          - "{{ cluster_subnet.results[1]['subnet']['id'] }}"
+          security_groups: 
+          - "{{ http_security_group.security_groups[0]['group_id'] }}"
+        desired_count: "{{ size_of_cluster }}"
+        region: "{{ cloud_config.region }}"
+        deployment_configuration:
+          minimum_healthy_percent: 75
+          maximum_percent: 150
+
+
+
