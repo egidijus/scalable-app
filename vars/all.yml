@@ -13,8 +13,9 @@ cloud_config:
   vpc_name: "{{ cluster_name }}-vpc"
   vpc_cidr: '10.0.0.0/16'
   subnets:
-    - { subnet_name: '{{ cluster_name }}-subnet-a', subnet_cidr: '10.0.10.0/24', zone: '{{ region }}a' }
-    - { subnet_name: '{{ cluster_name }}-subnet-b', subnet_cidr: '10.0.11.0/24', zone: '{{ region }}b' }
+    - { subnet_name: '{{ cluster_name }}_subnet_a', subnet_cidr: '10.0.0.0/24', zone: '{{ region }}a' }
+    - { subnet_name: '{{ cluster_name }}_subnet_b', subnet_cidr: '10.0.1.0/24', zone: '{{ region }}b' }
+    - { subnet_name: '{{ cluster_name }}_subnet_c', subnet_cidr: '10.0.2.0/24', zone: '{{ region }}c' }
   internet_gateway: true                                           # Only set to false if using local repos (node will be without Internet access)
   admin_username: ec2-user
   security_groups:

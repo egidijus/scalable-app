@@ -46,20 +46,22 @@
       ignore_errors: True
     - debug: msg="{{ check_route_table }}"
 
+    - debug: msg="{{ cluster_subnet.results[0]['subnet'] }}"
     - name: Set up the public subnet route table for the Internet Gateway
-      ec2_vpc_route_table:
-        region: "{{ cloud_config.region }}"
-        vpc_id: "{{ cluster_vpc.vpc.id }}"
-        subnets: "{{ item }}"
-        tags:
-          Name: scalable-app
-        routes:
-          - dest: 0.0.0.0/0
-            gateway_id: "{{ cluster_igw.gateway_id }}"
-        state: present
-      with_items:
-        - "{{ cluster_subnet.results[0]['subnet']['id'] }}"
-        - "{{ cluster_subnet.results[1]['subnet']['id'] }}"
+      block:
+        - ec2_vpc_route_table:
+            tags:
+              Name: scalable-app
+            region: "{{ cloud_config.region }}"
+            vpc_id: "{{ cluster_vpc.vpc.id }}"
+            subnets:
+              - "{{ cloud_config.subnets[0].subnet_cidr }}"
+              - "{{ cloud_config.subnets[1].subnet_cidr }}"
+              - "{{ cloud_config.subnets[2].subnet_cidr }}"
+            routes:
+              - dest: 0.0.0.0/0
+                gateway_id: "{{ cluster_igw.gateway_id }}"
+            state: present
       when: cluster_igw.gateway_id is defined and check_route_table|failed
 
     - name: Create Security Groups
@@ -178,6 +180,7 @@
         subnets:
           - "{{ cluster_subnet.results[0]['subnet']['id'] }}"
           - "{{ cluster_subnet.results[1]['subnet']['id'] }}"
+          - "{{ cluster_subnet.results[2]['subnet']['id'] }}"
         listeners:
           - Protocol: HTTP
             Port: 80
@@ -263,6 +266,7 @@
           subnets:
           - "{{ cluster_subnet.results[0]['subnet']['id'] }}"
           - "{{ cluster_subnet.results[1]['subnet']['id'] }}"
+          - "{{ cluster_subnet.results[2]['subnet']['id'] }}"
           security_groups:
           - "{{ http_security_group.security_groups[0]['group_id'] }}"
         desired_count: "{{ size_of_cluster }}"
