@@ -135,7 +135,6 @@
         assume_role_policy_document: "{{ lookup('file','./vars/role.json') }}"
         description: Allows ECS tasks to call AWS services on your behalf.
       register: ecs_role
-    # - debug: msg="{{ ecs_role }}"
 
     - name: Lookup http security group by name
       ec2_group_facts:
@@ -196,7 +195,6 @@
       register: elb_target_group_facts
     - debug: msg="target group {{ elb_target_group_facts.target_groups[0]['target_group_arn'] }}"
 
-
     - name: Lookup Elb Facts
       shell: "(aws elbv2 describe-load-balancers --names {{ cluster_name |replace('_', '-') }} --output=json)"
       register: ecs_elb_facts
@@ -213,9 +211,6 @@
           record: "{{ dns_zone }}"
           type: A
       register: zone_info
-    # - debug: msg="{{ zone_info.set['alias_hosted_zone_id'] }}"
-
-    # - debug: msg="{{ ecs_elb_facts.stdout }}"
 
     - name: register the ELB under the zone A record.
       route53:
@@ -227,7 +222,6 @@
           overwrite: yes
           alias: True
           alias_hosted_zone_id: "{{ zone_info.set['alias_hosted_zone_id'] }}"
-
 
     - name: Create task definition
       ecs_taskdefinition:
