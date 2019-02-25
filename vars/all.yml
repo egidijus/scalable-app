@@ -1,0 +1,27 @@
+
+cluster_name: scalable_app
+repository_name: scalable_app
+image_name: scalable-app
+image_version: latest
+region: eu-west-1
+s3_static_asset_bucket: tomato.cat
+dns_zone: tomato.cat
+size_of_cluster: 1
+
+cloud_config:
+  region: '{{ region }}'
+  vpc_name: "{{ cluster_name }}-vpc"
+  vpc_cidr: '10.0.0.0/16'
+  subnets:
+    - { subnet_name: '{{ cluster_name }}-subnet-a', subnet_cidr: '10.0.10.0/24', zone: '{{ region }}a' }
+    - { subnet_name: '{{ cluster_name }}-subnet-b', subnet_cidr: '10.0.11.0/24', zone: '{{ region }}b' }
+  internet_gateway: true                                           # Only set to false if using local repos (node will be without Internet access)
+  admin_username: ec2-user
+  security_groups:
+    - name: scalable-http
+      rules:
+        - {"proto":"tcp", "from_port":"80", "to_port":"80", "cidr_ip":"0.0.0.0/0"}
+        - {"proto":"tcp", "from_port":"443", "to_port":"443", "cidr_ip":"0.0.0.0/0"}
+        - {"proto":"tcp", "from_port":"8448", "to_port":"8448", "cidr_ip":"0.0.0.0/0"}
+      description: "http - {{ cluster_name }}"
+
