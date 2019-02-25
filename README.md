@@ -1,3 +1,5 @@
+# modern ansible, AWS, ECS fargate "serverless" scalable app
+
 # What is this?
 This solution will:
 1. Build a docker image locally with a basic python app.
@@ -13,12 +15,43 @@ This solution will:
 
 
 
-One example cluster container is accessible behing the ELB
-http://63.33.41.119:8448/
+Find conatiners accessible behing the ELB
+```
+$▶ dig tomato.cat
+
+; <<>> DiG 9.11.3-1ubuntu1.3-Ubuntu <<>> tomato.cat
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 13650
+;; flags: qr rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 0, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 1452
+;; QUESTION SECTION:
+;tomato.cat.                    IN      A
+
+;; ANSWER SECTION:
+tomato.cat.             60      IN      A       52.209.168.210
+tomato.cat.             60      IN      A       54.76.137.186
+```
 
 ## Access
 ELB entrance is via  http://tomato.cat
 Health endpoint : http://tomato.cat/_health
+
+
+## You will need
+
+```
+ansible
+awscli
+boto
+botocore
+boto3
+docker
+docker-py
+docker-compose
+```
 
 
 
