@@ -12,10 +12,17 @@ This solution will:
 1. You can scale number of nodes you want to run by changing `size_of_cluster: 2` in `./vars/all.yml`
 1. This also puts logs in to AWS Cloudwatch.
 
+## Benefits
+1. Private docker registry that you do not have to host, only minimum management required. You can keep your business competitive advantage away from public docker hub.
+1. Minimal management of container cluster, while providing Kubernetes/Nomad like infrastructure.
+1. No patching or managing of underlying compute or OS.
+1. Reduced TCO and ability for the business to focus on core business goals instead of supporting complex infrastructure.
+1. Durable and highly available AWS S3 storage.
+1. Easily pluggable in to a centralised source of truth like AWX https://github.com/ansible/awx .
+1. This should be very much compatible with developer work-flow using docker containers.
 
 
-
-Find conatiners accessible behing the ELB
+Find containers accessible behind the ELB
 ```
 $▶ dig tomato.cat
 
@@ -71,10 +78,10 @@ This does not include test or test runner, but it should be easy to plug in step
 We could solve this with AWS Cloudwatch metrics, create an alarm on AWS ELB 40x and 50x responses, alarm publishes a notification to AWS SNS, AWS SNS is configured to a pagerduty endpoint and would call the on-call engineer.
 
 ## Logging:
-We would ship our logs to Logstash (either directly or by using a shipper that supports back-off and retry like Filebeat/Functionbeat) for processing. Logstash would parse logs and then ship to Elasticsearch cluster. We would have Dead Letter Queue for any logs that failed to be processed, store these logs in S3. This way we have never lose any log messages, and we could update the Logstash templates to improve parsing. Alternatively we could write logs directly in to AWS Cloudwatch Logs streams.
+We could ship our logs to Logstash (either directly or by using a shipper that supports back-off and retry like Filebeat/Functionbeat) for processing. Logstash would parse logs and then ship to Elasticsearch cluster. We would have Dead Letter Queue for any logs that failed to be processed, store these logs in S3. This way we have never lose any log messages, and we could update the Logstash templates to improve parsing. 
 
 ## Metrics:
-We would use a lightweight metric shipper like Telegraf (from the Tick stack). Or we can create custom metrics and write directly in to AWS Cloudwatch.
+We could use a lightweight metric shipper like Telegraf (from the Tick stack). Or we can create custom metrics and write directly in to AWS Cloudwatch.
 
 ## Backups:
 The application and the configuration is all in the code. The database schema and migrations would live in code. Application would be designed to be stateless. We trust RDS to be resilient, we take nightly snapshots and have point-in-time recover. Static files would be stored in S3.
