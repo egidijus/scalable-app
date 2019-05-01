@@ -16,6 +16,7 @@ This solution will:
 
 
 Find conatiners accessible behing the ELB
+( PLEASE NOTE, TOMATO.CAT is now a static HTML page on S3, because that is cheaper than running this infrastructure for a demo)
 ```
 $▶ dig tomato.cat
 
