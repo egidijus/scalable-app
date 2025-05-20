@@ -13,7 +13,7 @@ cryptography==41.0.4
 docker==3.7.0
 docker-pycreds==0.4.0
 docutils==0.14
-idna==2.8
+idna==3.7
 Jinja2>=2.10.1
 jmespath==0.9.3
 MarkupSafe==1.1.1
